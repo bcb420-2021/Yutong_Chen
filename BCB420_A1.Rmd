@@ -1,0 +1,195 @@
+---
+title: "BCB420 Assignment 1"
+author: "Yutong Chen 1003854803"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Introduction
+**Dataset GEO ID:** GSE119021<br>
+**Dataset Name:** A novel long non-coding RNA HOXC-AS3 mediates tumorigenesis of gastric cancer by binding to YBX1
+
+I chose such dataset because it studied the association between a lncRNA and a protein which links to tumorigenesis through binding. It's a new breakthrough based on prior research and can play a critical role in drug discovery especially gene therapies. I am not only curious about the statistic value of such dataset, but also really interested in the genetic causation of cancer. This dataset allows me to practice my knowledge learned in this course with an adequate level of difficulty and get interaction with what I am interested in at the same time. 
+
+## Assignment Code
+
+#### 1). Packages
+```{r}
+library(edgeR)
+library(limma)
+library(GEOquery)
+library(knitr)
+```
+
+#### 2). Download the data
+```{r}
+sfiles = GEOquery::getGEOSuppFiles('GSE119021')
+fnames = rownames(sfiles)
+GSE119021_exp = read.delim(fnames[1],header=TRUE,
+                    check.names = FALSE)
+
+#get the GEO description
+gse <- GEOquery::getGEO("GSE119021",GSEMatrix=FALSE)
+
+knitr::kable(data.frame(head(GEOquery::Meta(gse))), format = "html")
+
+ori_cover = dim(GSE119021_exp) #original cover of genes with measures
+```
+
+#### 3). Assess data quality
+```{r}
+#define groups to identify control and test conditions
+samples <- data.frame(lapply(colnames(GSE119021_exp)[2:13],
+        FUN=function(x){stringr::str_split_fixed(x, " repeat", 2)[c(1,2)]}))  
+#word "repeat" as the split pattern
+
+colnames(samples) <- colnames(GSE119021_exp)[2:13]
+
+rownames(samples) <- c("sample","replicate") #assign two groups
+
+samples <- data.frame(t(samples))
+
+#There are two experimental groups: ASO NC/HOXC-AS3 ASO and si-NC/si-YBX1. Both groups include one negative control sample (NCs) and one test sample (HOXC-AS3 ASO and si-YBX1), with 3 replicates for each, making this research dataset less biased and qualified for further analytic study.
+```
+  
+#### 4). Translate out counts into counts per million
+```{r}
+cpms = edgeR::cpm(GSE119021_exp[,2:13])
+
+rownames(cpms) <- GSE119021_exp[,1]
+```
+
+#### 5). Clean and Map of the dataset
+```{r}
+#get rid of genes that contain zero counts
+Keep = rowSums(cpms >1) >=12
+
+GSE119021_exp_filtered = GSE119021_exp[Keep,] 
+
+fil_cover = dim(GSE119021_exp_filtered) #get the filtered number of genes
+
+#summarized counts for each gene in a decreasing manner
+gene_counts <- sort(table(GSE119021_exp_filtered$AccID),    
+                 decreasing = TRUE)    
+
+knitr::kable(table(GSE119021_exp_filtered$AccID)[1:10], format="html")   
+#all the genes appear only once in this dataset, no duplication
+#each gene has an unique HUGO symbol already
+```
+
+#### 6). Draw boxplot of original counts
+```{r}
+data2plot <- log2(edgeR::cpm(GSE119021_exp_filtered[,2:13]))
+
+boxplot(data2plot, xlab = "Samples", ylab = "log2 CPM",
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "Boxplot of original counts")
+
+abline(h = median(apply(data2plot, 2, median)),
+        col = "green", lwd = 0.6, lty = "dashed")
+#Chose not to remove those outliers since there is no evidence showing they are caused by human error or other non-scientific accidents. 
+```
+
+
+
+#### 7). Draw density plot of original counts
+```{r}
+counts_density <- apply(log2(edgeR::cpm(GSE119021_exp_filtered[,2:13])), 2, density)
+
+ #calculate the axis limits
+ xlim <- 0; ylim <- 0
+ for (i in 1:length(counts_density)) {
+    xlim <- range(c(xlim, counts_density[[i]]$x));
+    ylim <- range(c(ylim, counts_density[[i]]$y))
+ }
+ 
+ cols <- rainbow(length(counts_density))
+ ltys <- rep(1, length(counts_density))
+ 
+ #initialize the plot
+ plot(counts_density[[1]], xlim=xlim, ylim=ylim, type="n",
+      ylab="Smoothing density of log2-CPM", main="", cex.lab = 0.8)
+ 
+ #plot each line
+ for (i in 1:length(counts_density)) lines(counts_density[[i]], col=cols[i])
+                                           
+ #create legend
+ legend("topright", colnames(data2plot),
+        col=cols, lty=ltys, cex=0.75,
+        border ="blue", text.col = "green4",
+        merge = TRUE, bg = "gray90")
+
+```
+
+
+
+#### 8). Normalization preparation
+
+I am using TMM normalization because:<br>
+1. The dataset doesn't need to be modified, so later on studies would be more convenient.<br>
+2. TMM can normalize between-samples comparisons by removing batch effects
+
+```{r}
+filtered_data_matrix <- as.matrix(GSE119021_exp_filtered[,2:13])
+
+rownames(filtered_data_matrix) <- GSE119021_exp_filtered$AccID
+
+d = edgeR::DGEList(counts=filtered_data_matrix, group=samples$sample) #group for comparison
+
+d = edgeR::calcNormFactors(d) 
+
+normalized_counts <- edgeR::cpm(d) #final dataframe with unique HUGO symbols as rownames
+
+final_cover = dim(normalized_counts) #final coverage of dataset
+#equals to fil_cover since no outlier was removed
+```
+   
+#### 9). Normalized density plot
+```{r}
+nor_density <- apply(log2(normalized_counts), 2, density)
+
+xlim <- 0; ylim <- 0
+ for (i in 1:length(nor_density)) {
+    xlim <- range(c(xlim, nor_density[[i]]$x));
+    ylim <- range(c(ylim, nor_density[[i]]$y))
+ }
+ 
+ cols <- rainbow(length(nor_density))
+ ltys <- rep(1, length(nor_density))
+ 
+ plot(nor_density[[1]], xlim=xlim, ylim=ylim, type="n",
+      ylab="Normalized smoothing density of log2-CPM", main="", cex.lab = 0.8)
+
+ for (i in 1:length(nor_density)) lines(nor_density[[i]], col=cols[i])
+                                           
+ legend("topright", colnames(data2plot),
+        col=cols, lty=ltys, cex=0.75,
+        border ="blue", text.col = "green4",
+        merge = TRUE, bg = "gray90")
+```
+
+
+
+#### 10). Normalized box plot
+```{r}
+nor_boxplot <- log2(normalized_counts) 
+
+boxplot(nor_boxplot, xlab = "Normalized Samples", ylab = "log2 CPM",
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "Normalized boxplot")
+
+abline(h = median(apply(nor_boxplot, 2, median)),
+        col = "green", lwd = 0.6, lty = "dashed")
+```
+
+
+
+#### 11). MDS plot post normalization
+```{r}
+limma::plotMDS(d, labels=rownames(samples),cex = 0.8,
+         col = c("darkgreen","blue")[factor(samples$sample)])
+#Generally samples are separated in a normalized configuration which means the normalization works.
+```
+
+
