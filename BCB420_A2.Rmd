@@ -1,0 +1,218 @@
+---
+title: "BCB420_A2"
+author: "Yutong Chen 1003854803"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Introduction
+**Dataset GEO ID:** GSE119021<br>
+**Dataset Name:** A novel long non-coding RNA HOXC-AS3 mediates tumorigenesis of gastric cancer by binding to YBX1
+
+**Quick recap:** <br>
+In assignment 1, I downloaded the dataset with the original cover of 41762 genes with measures, all of them are already symboled with gene ID. Then I eliminated the genes with zero counts, only 13307 genes left. These would be the genes I used for my subsequent study.<br>
+
+There are two groups of control and treatment: ASO NC VS. HOXC-AS3 ASO and si-NC VS. si-YBX1, each has three replicates. So I defined groups as "genes" and "replicate".<br>
+
+I used TMM for my normalization and finally got a normalized dataframe with unique gene IDs as rownames (13,307 entries, 12 total columns).<br>
+
+## Assignment Code
+
+### 1). Initiation
+```{r message=FALSE, warning=FALSE}
+library(edgeR)
+library(limma)
+library(GEOquery)
+library(knitr)
+library(biomaRt)
+library(ComplexHeatmap)
+library(circlize)
+library(tidyverse)
+library(RCurl)
+
+load("~/BCH441/ABC-units/normalized_counts.Rdata")
+load("~/BCH441/ABC-units/filtered_data_matrix.Rdata")
+load("~/BCH441/ABC-units/samples.Rdata")
+```
+
+
+### 2). Differential gene expression
+```{r}
+
+d = DGEList(counts=filtered_data_matrix,
+                            group=samples$gene)
+
+#replicates were clustered together in the MDS plot in A1, whereas the four gene
+#types were distributed far apart. So factors for the model should be genes.
+model_design <- model.matrix(~0 + samples$gene) 
+
+d <- estimateDisp(d,model_design)
+
+d <- calcNormFactors(d)
+
+fit <- glmQLFit(d, model_design)
+
+#treatment groups: HOXC-AS3 ASO and si-YBX1 are "1", and the two others are 
+#control groups, being "-1"
+fit2 <- glmQLFTest(fit, contrast=c(-1,1,-1,1))
+
+#calculate P-value for each gene and sort in decreasing order
+#topTags uses "BH" correction by default
+output_hits <- topTags(fit2,sort.by = "PValue", 
+                       n = nrow(normalized_counts))
+
+#number of genes were significantly differentially expressed
+length(which(output_hits$table$PValue < 0.05))
+
+#number of genes passed the "BH" correction
+length(which(output_hits$table$FDR < 0.05))
+```
+
+```{r}
+#draw MA plot for the amount of differentially expressed genes
+output <- output_hits$table
+
+#GAPDH as the reference gene with very low significance of differential expression 
+#HDAC5/WNT10B/MMP7 are genes that are linked to cell proliferation and cell 
+#migration in gastric cancer cells. They should be significantly down-regulated
+#in the MA plot if my calculation was right
+gene_of_interest <- list("HDAC5","WNT10B","GAPDH","MMP7")
+
+cols <- rainbow(length(gene_of_interest))
+ltys <- rep(1, length(gene_of_interest))
+ 
+plot(output$logCPM, output$logFC, main = "MA plot",
+     xlab = "logCPM", ylab = "logFC", col="grey")
+
+for (i in 1:length(gene_of_interest)){
+  points(output[which(  
+    rownames(output) == gene_of_interest[i]),2:1],        
+    pch=20, col=cols[i], cex=1.5)
+}
+
+legend("topright", legend=gene_of_interest[
+                              1:length(gene_of_interest)],
+                                  col=cols, cex=0.75, pch = 20,
+                                  border ="blue", bg = "gray90")
+```
+
+```{r}
+#plot tophit heatmap
+#set the tophit threshold as Pvalue<0.000005 (yes it's really samll value)
+#because there are 6037 genes with PValue<0.01 
+#and this number is too large for being a reasonable "tophit list"
+tophits <- rownames(output)[
+  which(output$PValue<0.000005)]        #still 1524 genes passed
+
+heatmap_matrix_tophits <- t(  
+  scale(t(normalized_counts[    
+    which(rownames(normalized_counts) %in% tophits),])))
+
+
+if(min(heatmap_matrix_tophits) == 0){    
+    heatmap_col = colorRamp2(c( 0, max(heatmap_matrix_tophits)),                        
+                             c( "white", "red"))  
+  } else {    
+    heatmap_col = colorRamp2(c(min(heatmap_matrix_tophits), 0,           
+                        max(heatmap_matrix_tophits)), 
+                        c("blue", "white", "red"))  
+  }
+
+tophit_heatmap <- Heatmap(as.matrix(heatmap_matrix_tophits),      
+                           cluster_rows = TRUE,  show_row_dend = TRUE,  
+                           cluster_columns = FALSE,show_column_dend = FALSE,
+                           col=heatmap_col,show_column_names = TRUE,       
+                           show_row_names = FALSE,show_heatmap_legend = TRUE,
+                           use_raster = TRUE)
+
+tophit_heatmap
+```
+
+### 3). Thresholded over-representation analysis
+```{r}
+#significantly up & down regulated genes
+#again, the Pvalue threshold is tiny
+upreg_genes <- rownames(output)[which(output_hits$table$PValue < 0.000005           
+             & output_hits$table$logFC > 0)]
+
+#number of significantly up-regulated genes
+length(upreg_genes)
+
+downreg_genes <- rownames(output)[which(output_hits$table$PValue < 0.000005          
+             & output_hits$table$logFC < 0)] 
+
+#number of significantly down-regulated genes
+length(downreg_genes)
+
+#all differentially expressed genes together
+diff_genes <- rownames(output_hits$table)
+
+write.table(x=upreg_genes,            
+            file= "up_regulated_genes.txt", sep ="\t",            
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+
+write.table(x=downreg_genes,            
+            file= "down_regulated_genes.txt", sep ="\t",            
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+
+write.table(x=diff_genes,            
+            file= "diff_exp_genes.txt", sep ="\t",            
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+
+```
+
+### 4). Assignemnt questions
+
+##### Differential Gene Expression<br>
+
+1. A total of 7721 genes were significantly differentially expressed. The threshold I used was PValue less than 0.05. This is the standard threshold for calculating statistical significance so I felt it's proper here as it did filtered out almost half of the genes in the normalized dataset.<br>
+
+2. I used BH for my correction. Benjamini-Hochberg correction controls the False discovery rate, which can be high especially for a genome-wide study including numerous hypothesis tests like the dataset I chose for this assignment, with thousands genes involved. BH can help to discover as many significance as possible while incurring a relatively low amount of false positives. Methods for family-wise error rate (FWER) are too conservative in terms of false positives in this case. 7004 genes passed correction.<br>
+
+3. Four genes were highlighted in the MA plot with GAPDH being the reference gene. Clearly, HDAC5/WNT10B/MMP7 are all significantly down-regulated by knockdown of YBX1 and HOXC-AS3 ASO, which aligns with the paper that HOXC-AS3 mediates tumorigenesis of gastric cancer by binding to YBX1. HDAC5/WNT10B/MMP7 are all genes critical in gastric cancer development.<br>
+
+4. I didn't condition cluster together in the MA plot because the four gene types were already sorted in the comparison order in the dataset. I just need to simply draw the plot and I was able to see significant color differences between the two groups of control and treatment samples. It's clear that more genes were down-regulated by the knockdown of HOXC-AS3 ASO and YBX1.<br>
+
+##### Thresholded over-representation analysis<br>
+
+1. I used DAVID for ORA method because to test the critical role of HOXC-AS3 and YBX1, I need to see if the pathways or gene sets that are over-represented are the ones relating to tumorigenesis. 
+
+2. I chose the OFFICIAL_GENE_SYMBOL by HGNC as my annotation because it's all for human genes and it was just updated yesterday which should be a high update frequency.
+
+3. 637 up-regulated gene sets and 887 down-regulated gene sets were returned, with a threshold of PValue = 0.000005. Same a the value for tophit list.
+
+4. After running analysis separately for up-regulated, down-regulated and the whole expression set, several differences were suggested. First, in terms of disease class enrichment [Figure 1], all three sets revealed significant enrichment in the cancer class, which aligned with the paper. However, the cancer class ranks top for the down-regulated sets, whereas for the other two sets, cancer is not the top ranked. This pattern proves the paper's statement about the tumorigenesis effect of HOXC-AS3 and YBX1. Second, by comparing the function keywords of the three sets [Figure 2], all of the three had "Phosphoprotein" "Alternative splicing" and "Acetylation" ranking in the top 10 rows. Particularly, these three cancer related functions are the top 3 significant keywords for the down-regulated gene set, and are among the top 4 for the whole expression set. So, this again align with the paper well. 
+
+
+##### Interpretation<br>
+
+1. Generally, the over-representation results support the original paper in the way that the down-regulated gene sets obtain the most significant enrichment in the "cancer" disease class and all three of "Phosphoprotein" "Alternative splicing" and "Acetylation" as the top significant function keywords. These all do support the tumorigenesis role of the interaction of HOXC-AS3 and YBX1. However, regarding the specifc cancer type, the original paper suggests "gastric cancer", whereas my analysis supports ovarian cancer and breast cancer with the most significance for the down-regulated gene sets [Figure 3]. I don't think this conflict makes any of the outcomes invalid or mistake, since the original paper didn't say that the HOXC-AS3 and YBX1 genes only participate in gastric cancer development, neither saying it's the top cancer type to be mediated by these two genes. Therefore, my result may suggest another two areas of potential tumorigenesis role for such gene interaction.<br>
+
+2. Yes. There are research papers stating the tumorigenesis role of HOXC-AS3 for breast cancer and ovarian cancer, possibly by binding to YBX1. <br>
+Citations are:<br>
+
+* Shi, S., Jiang, J., Zhang, W., Sun, L., Li, X., Li, C., Ge, Q., & Zhuang, Z. (2020). A Novel lncRNA HOXC-AS3 Acts as a miR-3922-5p Sponge to Promote Breast Cancer Metastasis. Cancer Investigation, 38(1), 1–12. https://doi.org/10.1080/07357907.2019.1695816<br>
+
+
+* Yang, B., Sun, L., & Liang, L. (2021). LncRNA HOXC-AS3 Suppresses the Formation of Mature miR-96 in Ovarian Cancer Cells to Promote Cell Proliferation. Reproductive Sciences (Thousand Oaks, Calif.). https://doi.org/10.1007/s43032-021-00500-x<br>
+
+
+* Long noncoding RNA HOXC-AS3 indicates a poor prognosis and regulates tumorigenesis by binding to YBX1 in breast cancer. (2020). American Journal of Translational Research, 12(10), 6335–6350.<br>
+
+
+### 5.) Figures
+All three figures are available on my student repo<br>
+<center>
+
+![Figure 1: DAVID Disease Class Annotation Comparison of three gene sets](C:/Users/Administrator/Documents/BCH441/ABC-units/Figure1_Disease class.png){width=80%}
+
+<br>
+
+![Figure 2: DAVID Function Keywords Annotation Comparison of three gene sets](C:/Users/Administrator/Documents/BCH441/ABC-units/Figure2_Function keywords.png){width=80%}
+
+<br>
+
+![Figure 3: DAVID Disease Annotation Comparison of up & down-regulated sets](C:/Users/Administrator/Documents/BCH441/ABC-units/Figure3_Disease.png){width=80%}
+
+</center>
