@@ -1,0 +1,115 @@
+---
+title: "BCB420_A3"
+author: "Yutong Chen 1003854803"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Introduction
+**Dataset GEO ID:** GSE119021<br>
+**Dataset Name:** A novel long non-coding RNA HOXC-AS3 mediates tumorigenesis of gastric cancer by binding to YBX1
+
+**Quick recap:** <br>
+In assignment 1, I downloaded the dataset with the original cover of 41762 genes with measures, all of them are already symboled with gene ID. Then I eliminated the genes with zero counts, only 13307 genes left. These would be the genes I used for my subsequent study.<br>
+
+There are two groups of control and treatment: ASO NC VS. HOXC-AS3 ASO and si-NC VS. si-YBX1, each has three replicates. So I defined groups as "genes" and "replicate".<br>
+
+I used TMM for my normalization and finally got a normalized dataframe with unique gene IDs as rownames (13,307 entries, 12 total columns).<br>
+
+In assignment 2, I calculated P-Value for each gene and 7721 genes passed the <0.05 threshold (7004 after BH correction). Then selected "HDAC5","WNT10B","GAPDH","MMP7" as genes of interest, and got them present in the MA plot of differentially expressed genes.<br>
+
+Visualized the top hits by heatmap with threshold of P-Value < 0.000005 (1524 genes passed) <br>
+
+Then ran the threshold enrichment test on DAVID by testing significantly up-regulated/ down-regulated/ differentially expressed genes respectively and compared the results. Results align with the original paper.
+
+## 1)Assignment Questions
+
+### Non-thresholded Gene set Enrichment Analysis<br>
+<center>
+
+![Figure 1:GSEA result index](C:/Users/Administrator/Documents/BCH441/ABC-units/GSEA_index.png){width=50%}
+
+<br>
+
+
+
+![Figure 2:GSEA pathway](C:/Users/Administrator/Documents/BCH441/ABC-units/GSEA_pathway.png){width=60%}
+
+</center>
+
+<br>
+
+
+
+1. I transformed the "output" list (all the differentially expressed genes-13307 genes) to a pre-ranked list "non_thre_genes.rnk" and put it into GSEA with 1000 permutations. Gene set size filters (min=15, max=200) kept 4713 genes for analysis.<br>
+
+2. 129 genes were significantly down-regulated with P-value < 1%. The most significant pathway is EPIDERMAL GROWTH FACTOR RECEPTOR SIGNALING PATHWAY and all the top 5 pathways are somehow associated with tumorigenesis.<br>
+
+3. Yes, clearly this result aligns with the one for Assignment 2. Both results identify the inhibition role of the interaction of HOXC-AS3 and YBX1 in cancer development, which is straight forward.<br>
+
+### Visualization in Cytoscape
+
+1. After setting the node cutoff (p-value < 0.05) and edge cutoff (similarity > 0.5), there are 4713 nodes and 45051 edges in the resulting map according to the edge table and node table.<br>
+
+<center>
+
+![Figure 3:Network prior to manual layout](C:/Users/Administrator/Documents/BCH441/ABC-units/Cyto_ini.png){width=60%}
+
+</center>
+<br>
+
+
+
+2. I used AutoAnnotate in Cytoscape to automatically annotate the network. Default parameter of 10 is used.<br>
+
+<center>
+
+![Figure 4:AutoAnnotation](C:/Users/Administrator/Documents/BCH441/ABC-units/Cyto_anno_1.png){width=60%}
+
+</center>
+<br>
+
+
+
+3. Publication ready figure with legend<br>
+
+<center>
+
+![Figure 5:Publication ready figure](C:/Users/Administrator/Documents/BCH441/ABC-units/Cyto_pub.png){width=60%}
+
+</center>
+
+<br>
+
+
+
+4. Major theme is pathways in tumorigenesis process, such as tp53 expression activity, kinase inactive braf, raf map mapk1 and gli3 processed degradation. Gli3 processed degration pathway attracts my attention because it was not highlighted in Assignment 2 threshold enrichment analysis.<br>
+
+## 3) Interpretation
+
+1. The result supports the mechanism of tumorigenesis discussed in original paper, also aligns with assignment 2. However, pathways defined by non-threshold GSEA didn't completely overlap with the threshold one and suggests some other unique pathways.<br>
+
+2. Yes. GLI3 gene is most related to breast cancer and ovarian cancer (almost same expression rate) which perfectly overlap with the result got on DAVID in Assignment 2.<br>
+
+<center>
+
+![Figure 6:GLI3 gene expression in cancers](C:/Users/Administrator/Documents/BCH441/ABC-units/gli3.png){width=80%}
+
+<br>
+
+
+![Figure 7:DAVID down-regulated disease](C:/Users/Administrator/Documents/BCH441/ABC-units/down_3.png){width=50%}
+
+</center>
+
+<br>
+
+
+
+3. Post analysis using drugs (Human_DrugBank_all_symbol.gmt). I've heard about several drugs treat ovarian cancer well during my intern so I want to see if any of them appear in the post analysis. Surprisingly, I got Fostamatinib with the highest ranking but its marketed indication was for Immune Thrombocytopenic Purpura. But after research, I found an ongoing clinical 1 trial of the combination of Fostamatinib and Paclitaxel for ovarian cancer by Sidney Kimmel Comprehensive Cancer Center at Johns Hopkins, started in 2018 and expected to end in 2021. Link:https://clinicaltrials.gov/ct2/show/NCT03246074 <br>
+
+<center>
+![Figure 8:Drug post analysis](C:/Users/Administrator/Documents/BCH441/ABC-units/drug.png){width=70%}
+
+</center>
